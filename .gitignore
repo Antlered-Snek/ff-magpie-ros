@@ -1,0 +1,33 @@
+# ROS 2 / colcon outputs
+/build/
+/install/
+/log/
+
+# Python build and cache files
+__pycache__/
+*.py[cod]
+*.egg-info/
+/dist/
+/wheelhouse/
+
+# Test and type-check caches
+.pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+/htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+
+# Editor-generated databases and lock files
+.vscode/*.db*
+.vscode/*.lock
+
+# Local operating-system files
+.DS_Store
+Thumbs.db
+
+# Other
+.editorconfig

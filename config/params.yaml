@@ -1,0 +1,13 @@
+ethernet_reader:
+  ros__parameters:
+    listen_host: 0.0.0.0
+    listen_port: 9000
+    command_port: 9001
+    target_ip: 10.96.240.1
+    output_dir: "~/.ros/ff_magpie/dataset_tracked"
+    file_prefix: "tracked_detections_run"
+
+ld06_dtof_lidar_parser:
+  ros__parameters:
+    serial_port: /dev/ttyACM0
+    serial_baud: 230400
