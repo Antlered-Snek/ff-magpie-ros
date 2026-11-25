@@ -22,6 +22,7 @@ __pycache__/
 venv/
 
 # Editor-generated databases and lock files
+.vscode/
 .vscode/*.db*
 .vscode/*.lock
 
