@@ -1,7 +1,8 @@
 """Launch the LD06 parser and RViz configured to display its scan."""
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
 from launch_ros.actions import Node
@@ -14,6 +15,16 @@ def generate_launch_description() -> LaunchDescription:
         FindPackageShare('ff_magpie_ros'),
         'config',
         'params.yaml',
+    ])
+    slam_params_file = PathJoinSubstitution([
+        FindPackageShare('ff_magpie_ros'),
+        'config',
+        'slam_toolbox.yaml',
+    ])
+    slam_launch_file = PathJoinSubstitution([
+        FindPackageShare('slam_toolbox'),
+        'launch',
+        'online_async_launch.py',
     ])
     rviz_config_file = PathJoinSubstitution([
         FindPackageShare('ff_magpie_ros'),
@@ -30,6 +41,11 @@ def generate_launch_description() -> LaunchDescription:
             default_value=default_params_file,
             description='Path to the ROS parameter file.',
         ),
+        DeclareLaunchArgument(
+            'slam_params_file',
+            default_value=slam_params_file,
+            description='Path to the slam_toolbox parameter file.',
+        ),
         # Nodes
         Node(
             package='ff_magpie_ros',
@@ -38,7 +54,15 @@ def generate_launch_description() -> LaunchDescription:
             output='screen',
             parameters=[LaunchConfiguration('params_file')],
         ),
-        # Show /scan in a 2D top-down view, using the parser's laser_frame.
+        # Mapping needs odom -> base_link and base_link -> laser_frame TFs.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(slam_launch_file),
+            launch_arguments={
+                'slam_params_file': LaunchConfiguration('slam_params_file'),
+                'use_sim_time': 'false',
+            }.items(),
+        ),
+        # Show the /map and /scan topics in a 2D top-down view.
         Node(
             package='rviz2',
             executable='rviz2',

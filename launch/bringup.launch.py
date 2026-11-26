@@ -1,7 +1,8 @@
 """Launch the package nodes with shared ROS parameters."""
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
 from launch_ros.actions import Node
@@ -15,6 +16,16 @@ def generate_launch_description() -> LaunchDescription:
         'config',
         'params.yaml',
     ])
+    slam_params_file = PathJoinSubstitution([
+        FindPackageShare('ff_magpie_ros'),
+        'config',
+        'slam_toolbox.yaml',
+    ])
+    slam_launch_file = PathJoinSubstitution([
+        FindPackageShare('slam_toolbox'),
+        'launch',
+        'online_async_launch.py',
+    ])
 
     # LaunchDescription lists the actions ROS runs for this launch.
     return LaunchDescription([
@@ -24,6 +35,11 @@ def generate_launch_description() -> LaunchDescription:
             'params_file',
             default_value=default_params_file,
             description='Path to the ROS parameter file.',
+        ),
+        DeclareLaunchArgument(
+            'slam_params_file',
+            default_value=slam_params_file,
+            description='Path to the slam_toolbox parameter file.',
         ),
         # Nodes
         Node(
@@ -46,5 +62,13 @@ def generate_launch_description() -> LaunchDescription:
             name='data_preplanner',
             output='screen',
             parameters=[LaunchConfiguration('params_file')],
+        ),
+        # Use slam_toolbox's lifecycle-aware async mapping launch.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(slam_launch_file),
+            launch_arguments={
+                'slam_params_file': LaunchConfiguration('slam_params_file'),
+                'use_sim_time': 'false',
+            }.items(),
         ),
     ])
