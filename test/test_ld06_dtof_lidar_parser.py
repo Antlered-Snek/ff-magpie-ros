@@ -17,12 +17,10 @@ from types import SimpleNamespace
 from typing import cast
 
 from ff_magpie_ros.ld06_dtof_lidar_parser import (
-    LD06DTOFLidarParser,
     ld06_crc8,
+    LD06DTOFLidarParser,
     parse_ld06_packet,
 )
-
-import pytest
 
 import serial
 
@@ -127,12 +125,13 @@ def test_read_serial_loop_resynchronizes_after_bad_packet() -> None:
 
 
 def test_missing_serial_device_is_retried_without_raising(monkeypatch) -> None:
-    warning_messages: list[str] = []
+    status_messages: list[str] = []
     reader = LD06DTOFLidarParser.__new__(LD06DTOFLidarParser)
     reader.port = '/dev/ttyACM0'
     reader.baud = 230400
     reader.ser = None
     reader._last_connection_attempt = -2.0
+    reader._serial_is_connected = False
     reader._serial_buffer = bytearray()
     reader._ranges = [float('inf')] * 360
     reader._last_angle_deg = None
@@ -141,8 +140,8 @@ def test_missing_serial_device_is_retried_without_raising(monkeypatch) -> None:
         LD06DTOFLidarParser,
         'get_logger',
         lambda self: SimpleNamespace(
-            warning=warning_messages.append,
-            info=lambda message: None,
+            warning=status_messages.append,
+            info=status_messages.append,
         ),
     )
     clock_values = iter((10.0, 11.0, 12.0))
@@ -166,4 +165,4 @@ def test_missing_serial_device_is_retried_without_raising(monkeypatch) -> None:
     reader.read_serial_loop()
     assert len(serial_attempts) == 2
     assert reader.ser is not None
-    assert warning_messages
+    assert any('Waiting for /dev/ttyACM0' in msg for msg in status_messages)

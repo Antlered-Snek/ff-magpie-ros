@@ -13,17 +13,17 @@
 # limitations under the License.
 
 import csv
-import math
 from datetime import datetime, timezone
+import math
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
 from ff_magpie_ros.ethernet_reader import (
-    EthernetReader,
-    TrackedDetections,
     detection_map_coordinates,
-    save_to_csv,
+    EthernetReader,
+    save_tracked_detections,
+    TrackedDetections,
 )
 
 import pytest
@@ -41,6 +41,7 @@ def test_detection_map_coordinates_applies_robot_pose() -> None:
 def test_store_telemetry_aggregates_same_id_by_confidence() -> None:
     reader = EthernetReader.__new__(EthernetReader)
     reader.robot_pose = (1.0, 2.0, 0.0)
+    reader.robot_pose_frame = 'map'
     reader.dataset = {}
     payloads = [
         {
@@ -71,6 +72,8 @@ def test_store_telemetry_aggregates_same_id_by_confidence() -> None:
     assert stored.y == pytest.approx(2.0)
     assert stored.conf_avg == pytest.approx(0.5)
     assert stored.conf_highest == pytest.approx(0.75)
+    assert stored.frame_id == 'map'
+    assert payloads[0]['detections'][0]['frame_id'] == 'map'
     assert stored.first_seen.tzinfo == timezone.utc
     assert stored.last_seen >= stored.first_seen
     assert payloads[0]['detections'][0]['x'] == pytest.approx(2.0)
@@ -84,6 +87,7 @@ def test_save_to_csv_writes_timestamped_dataset(tmp_path: Path) -> None:
             id=7,
             first_seen=timestamp,
             last_seen=timestamp,
+            frame_id='map',
             x=1.5,
             y=2.5,
             conf_avg=0.7,
@@ -91,7 +95,7 @@ def test_save_to_csv_writes_timestamped_dataset(tmp_path: Path) -> None:
         ),
     }
 
-    csv_path = save_to_csv(dataset, str(tmp_path), 'detections')
+    csv_path = save_tracked_detections(dataset, str(tmp_path), 'detections')
 
     assert csv_path.parent == tmp_path
     assert csv_path.name.startswith('detections_')
@@ -101,15 +105,20 @@ def test_save_to_csv_writes_timestamped_dataset(tmp_path: Path) -> None:
         'id': '7',
         'first_seen': timestamp.isoformat(),
         'last_seen': timestamp.isoformat(),
+        'frame_id': 'map',
         'x': '1.5',
         'y': '2.5',
         'conf_avg': '0.7',
         'conf_highest': '0.9',
+        'observation_count': '1',
     }]
 
 
 @pytest.mark.parametrize('command', ['quit', 'exit'])
-def test_exit_command_requests_context_shutdown(monkeypatch, command: str) -> None:
+def test_exit_command_requests_context_shutdown(
+    monkeypatch,
+    command: str,
+) -> None:
     context = object()
     reader = SimpleNamespace(
         context=context,

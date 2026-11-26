@@ -13,6 +13,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config', ['config/params.yaml']),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
+        ('share/' + package_name + '/rviz', glob('rviz/*.rviz')),
     ],
     package_data={'': ['py.typed']},
     install_requires=['setuptools'],
@@ -30,6 +31,7 @@ setup(
         'console_scripts': [
             'ethernet_reader = ff_magpie_ros.ethernet_reader:main',
             'ld06_dtof_lidar_parser = ff_magpie_ros.ld06_dtof_lidar_parser:main',
+            'data_preplanner = ff_magpie_ros.data_preplanner:main',
         ],
     },
 )

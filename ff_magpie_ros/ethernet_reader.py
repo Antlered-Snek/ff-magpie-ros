@@ -28,12 +28,26 @@ GREEN	= "\033[92m"
 RESET	= "\033[0m"
 
 
+TRACKED_DETECTION_CSV_FIELDS = (
+	'id',
+	'first_seen',
+	'last_seen',
+	'frame_id',
+	'x',
+	'y',
+	'conf_avg',
+	'conf_highest',
+	'observation_count',
+)
+
+
 
 # Functions and Dataclasses
 @dataclass
 class TrackedDetections:
 	first_seen: datetime
 	last_seen: datetime
+	frame_id: str
 	id: int = 0
 	x: float = 0.0
 	y: float = 0.0
@@ -126,7 +140,7 @@ def parse_command(line: str) -> Optional[dict[str, Any]]:
 	return None
 
 
-def save_to_csv(
+def save_tracked_detections(
 	dataset: dict[int, TrackedDetections],
 	output_dir: str,
 	file_prefix: str,
@@ -143,17 +157,8 @@ def save_to_csv(
 	filename = f'{file_prefix}_{timestamp.strftime("%Y%m%dT%H%M%S_%fZ")}.csv'
 	csv_path = directory / filename
 
-	fieldnames = (
-		'id',
-		'first_seen',
-		'last_seen',
-		'x',
-		'y',
-		'conf_avg',
-		'conf_highest',
-	)
 	with csv_path.open('w', newline='', encoding='utf-8') as csv_file:
-		writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+		writer = csv.DictWriter(csv_file, fieldnames=TRACKED_DETECTION_CSV_FIELDS)
 		writer.writeheader()
 		for detection_id in sorted(dataset):
 			detection = dataset[detection_id]
@@ -161,10 +166,12 @@ def save_to_csv(
 				'id': detection.id,
 				'first_seen': detection.first_seen.isoformat(),
 				'last_seen': detection.last_seen.isoformat(),
+				'frame_id': detection.frame_id,
 				'x': detection.x,
 				'y': detection.y,
 				'conf_avg': detection.conf_avg,
 				'conf_highest': detection.conf_highest,
+				'observation_count': max(1, detection._observation_count),
 			})
 
 	return csv_path
@@ -186,6 +193,10 @@ class EthernetReader(Node):
 		# Declaring Dataset Storage Parameters
 		self.declare_parameter('output_dir', '')
 		self.declare_parameter('file_prefix', '')
+
+		# Declaring ROS COmmunication Parameters
+		self.declare_parameter('camera_data_topic', '')
+		self.declare_parameter('camera_command_topic', '')
 		
 		# Getting Network Parameters as properties
 		self.listen_host	= str(self.get_parameter('listen_host').get_parameter_value().string_value)
@@ -197,6 +208,10 @@ class EthernetReader(Node):
 		self.csv_output_dir  = str(self.get_parameter('output_dir').get_parameter_value().string_value)
 		self.csv_file_prefix = str(self.get_parameter('file_prefix').get_parameter_value().string_value)
 
+		# Getting ROS COmmunication Parameters as strings
+		camera_data_topic 	 :str = str(self.get_parameter('camera_data_topic').get_parameter_value().string_value)
+		camera_command_topic :str = str(self.get_parameter('camera_command_topic').get_parameter_value().string_value)
+
 		# Other properties
 		self.camera_address: Optional[tuple[str, int]] = ((target_ip, self.command_port) if target_ip else None)
 		self.stop_event = threading.Event()
@@ -204,10 +219,11 @@ class EthernetReader(Node):
 		self.pending_payloads: list[tuple[dict[str, Any], str, int]] = []
 		self.dataset: dict[int, TrackedDetections] = {}
 		self.robot_pose: Optional[tuple[float, float, float]] = None
+		self.robot_pose_frame: Optional[str] = None
 
 		# ROS Communication
-		self.telemetry_publisher = self.create_publisher(String, 'camera/telemetry', 10)
-		self.command_subscription = self.create_subscription(String, 'camera/command', self.command_callback, 10)
+		self.telemetry_publisher = self.create_publisher(String, camera_data_topic, 10)
+		self.command_subscription = self.create_subscription(String, camera_command_topic, self.command_callback, 10)
 		self.pose_subscription = self.create_subscription(PoseWithCovarianceStamped, '/slam_toolbox/pose', self.pose_callback, 10,)
 		self.publish_timer = self.create_timer(0.02, self.process_pending_telemetry)
 		self.command_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -282,7 +298,7 @@ class EthernetReader(Node):
 					self.pending_payloads.append((payload, address[0], address[1]))
 
 	def pose_callback(self, message: PoseWithCovarianceStamped) -> None:
-		"""Keep the latest robot pose published by slam_toolbox."""
+		"""Keep the latest SLAM pose and its fixed reference frame."""
 		position = message.pose.pose.position
 		orientation = message.pose.pose.orientation
 		self.robot_pose = (
@@ -290,13 +306,14 @@ class EthernetReader(Node):
 			position.y,
 			quaternion_yaw(orientation.x, orientation.y, orientation.z, orientation.w),
 		)
+		self.robot_pose_frame = message.header.frame_id
 
 	def store_telemetry(self, payload: dict[str, Any]) -> None:
-		"""Project detections and update the per-ID confidence aggregates."""
+		"""Project detections into the SLAM frame and update per-ID aggregates."""
 		
 		# Make sure Pose is actually populated
-		if self.robot_pose is None:
-			self.get_logger().warning('Cannot store detections before receiving /slam_toolbox/pose')
+		if self.robot_pose is None or not self.robot_pose_frame:
+			self.get_logger().warning('Cannot store detections before receiving a framed /slam_toolbox/pose')
 			return
 
 		# For every detection in payload
@@ -325,10 +342,11 @@ class EthernetReader(Node):
 				self.get_logger().warning(f'Skipping invalid telemetry detection: {error}')
 				continue
 
-			# Local polar coordinates to global cartesian coordinates
+			# Transform from base_link into the pose's fixed map/odom reference frame.
 			x, y = detection_map_coordinates(distance, angle_x, angle_y, self.robot_pose)
 			detection['x'] = x
 			detection['y'] = y
+			detection['frame_id'] = self.robot_pose_frame
 
 			# Create new dateset entry if ID is unique
 			stored = self.dataset.get(detection_id)
@@ -338,9 +356,16 @@ class EthernetReader(Node):
 					id=detection_id,
 					first_seen=first_seen,
 					last_seen=first_seen,
+					frame_id=self.robot_pose_frame,
 				)
 				self.dataset[detection_id] = stored
 			else:
+				if stored.frame_id != self.robot_pose_frame:
+					self.get_logger().warning(
+						f'Skipping detection ID {detection_id}: pose frame changed '
+						f'from {stored.frame_id} to {self.robot_pose_frame}'
+					)
+					continue
 				stored.last_seen = datetime.now(timezone.utc)
 
 			# Averaging Confidence
@@ -437,7 +462,7 @@ def main(args: Optional[list[str]] = None) -> None:
 			node.close()
 		finally:
 			try:
-				csv_path = save_to_csv(node.dataset, node.csv_output_dir, node.csv_file_prefix)
+				csv_path = save_tracked_detections(node.dataset, node.csv_output_dir, node.csv_file_prefix)
 				node.get_logger().info(f'Saved tracked detections to {csv_path}')
 			finally:
 				node.destroy_node()

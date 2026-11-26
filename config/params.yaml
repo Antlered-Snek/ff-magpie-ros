@@ -6,8 +6,25 @@ ethernet_reader:
     target_ip: 10.96.240.1
     output_dir: "~/.ros/ff_magpie/dataset_tracked"
     file_prefix: "tracked_detections_run"
+    camera_data_topic: 'camera/telemetry'
+    camera_command_topic: 'camera/command'
 
 ld06_dtof_lidar_parser:
   ros__parameters:
-    serial_port: /dev/ttyACM0
+    # serial_port: /dev/ttyACM0
+    serial_port: /dev/ttyUSB0
     serial_baud: 230400
+
+data_preplanner:
+  ros__parameters:
+    tracked_dir: "~/.ros/ff_magpie/dataset_tracked"
+    tracked_file_prefix: "tracked_detections_run"
+    filtered_dir: "~/.ros/ff_magpie/dataset_filtered"
+    tolerance_m: 0.02
+    filtered_file_prefix: "filtered_detections_run"
+    histogram_file_prefix: "detection_prize_histogram"
+    histogram_resolution_m: 0.10
+    gaussian_sigma_m: 0.10
+    max_histogram_cells: 4000000
+    command_topic: "/data_preplanner/command"
+    histogram_topic: "/data_preplanner/prize_grid"

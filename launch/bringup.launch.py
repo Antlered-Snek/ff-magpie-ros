@@ -1,4 +1,4 @@
-"""Launch the camera bridge and lidar parser with package parameters."""
+"""Launch the package nodes with shared ROS parameters."""
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -9,14 +9,14 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def generate_launch_description() -> LaunchDescription:
-    # Find the installed package share directory so this works after installation.
+    # Resolve params from the installed package share directory.
     default_params_file = PathJoinSubstitution([
         FindPackageShare('ff_magpie_ros'),
         'config',
         'params.yaml',
     ])
 
-    # LaunchDescription is the list of actions ROS runs for this launch command.
+    # LaunchDescription lists the actions ROS runs for this launch.
     return LaunchDescription([
         # Allow a different parameter YAML to be selected, e.g.
         # params_file:=/path/to/params.yaml on the ros2 launch command.
@@ -25,9 +25,7 @@ def generate_launch_description() -> LaunchDescription:
             default_value=default_params_file,
             description='Path to the ROS parameter file.',
         ),
-
-
-		# Nodes
+        # Nodes
         Node(
             package='ff_magpie_ros',
             executable='ethernet_reader',
@@ -39,6 +37,13 @@ def generate_launch_description() -> LaunchDescription:
             package='ff_magpie_ros',
             executable='ld06_dtof_lidar_parser',
             name='ld06_dtof_lidar_parser',
+            output='screen',
+            parameters=[LaunchConfiguration('params_file')],
+        ),
+        Node(
+            package='ff_magpie_ros',
+            executable='data_preplanner',
+            name='data_preplanner',
             output='screen',
             parameters=[LaunchConfiguration('params_file')],
         ),
